@@ -1,0 +1,273 @@
+---
+title: "CMSC320 Final Project, UMD, Spring '19"
+author: "Anselm Teather, Zach Caplan, Ophir Gal"
+date: "Due on May 22, 2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(rvest)
+library(broom)
+library(caret)
+library(glmnet)
+library(mlbench)
+library(randomForest)
+options(warn=-1)
+```
+
+# Introduction
+
+  Moving to a new city has its own set of challenges. Everyone wants a place that’ll minimize their commute or has easy access to something like public transportation, but ultimately the price of the property will be the deciding factor. However, since a property owner can decide a listing price, what factors contribute to their decision? 
+	An article by Kyle Hiscock provides a solid dive into these factors in his article [What Factors Influence The Sale of a Home](https://www.rochesterrealestateblog.com/what-factors-influence-the-sale-price-of-a-home/). One of the main points he brings up is home prices depend greatly on “local real estate market conditions.” This means homes will have the similar prices in their local area, relatively independent of their own individual quality. However, homes will also depend on the “recent sale prices of “comparable” homes, meaning that a three story home will not be listed on the same tier as a one story home. So how does this all come together?  
+	
+  When looking at the prices of homes, it will be pretty useful to group them by neighborhood. Clumping listed homes together will help us understand the scope of prices and help relate other conditions to them. Further, we will be focusing on the median value of listing prices for these neighborhoods. As Charlotte Cossar states in her [article for realestate.com.au](https://www.realestate.com.au/advice/median-house-price-what-does-it-mean/), “the median price [should be] used rather than the mean mainly because it is a more accurate indicator of the market, as it reflects the sample size being used.” Among other reasons she goes into, it gives an observer a solid idea of the prices they can expect in the area. 
+	Regardless, in our search for a home in Boston, we have come across an interesting range of prices. Our curiosity has lead us to examine the external factors surrounding a neighborhood’s median price. In other words, what relationship can we find between statistical records and a listing price?
+
+# Data  
+
+In this tutorial, we will being by loading a data set containing various pieces of information about housing in Boston. 
+In data science we refer to the objects to which data in a dataset refers to as entities. 
+In our case here, the entities are different suburbs of Boston, Massachusetts. 
+Each entity contains attributes relevant to that suburb including median value of homes, average number of rooms per building and so forth. 
+The data set contains 333 entities, which we will split into a training set and a held-out test set before we create our predictors. 
+Each entity has 14 attributes (excluding ID). Our target variable will be `medv`.   
+
+Below is a brief description of each attribute:
+
+  1. `crim` - per capita crime rate by town.
+  2. `zn` - proportion of residential land zoned for lots over 25,000 sq.ft.
+  3. `indus` - proportion of non-retail business acres per town.
+  4. `chas` - Charles River dummy variable (= 1 if tract bounds river; 0 otherwise).
+  5. `nox` - nitrogen oxides concentration (parts per 10 million).
+  6. `rm` - average number of rooms per dwelling.
+  7. `age` - proportion of owner-occupied units built prior to 1940.
+  8. `dis` - weighted mean of distances to five Boston employment centres.
+  9. `rad` - index of accessibility to radial highways.
+  10. `tax` - full-value property-tax rate per $10,000.
+  11. `ptratio` - pupil-teacher ratio by town.
+  12. `black` - $1000(Bk - 0.63)^2$ where Bk is the proportion of blacks by town.
+  13. `lstat` - lower status of the population (percent).
+  14. `medv` - median value of owner-occupied homes in $1000s.
+
+We will now read the data that was downloaded from Kaggle at the URL: https://www.kaggle.com/c/boston-housing. The data will be put into a data frame
+which arranges entries and attributes into rows and columns respectively. This is now called a rectangular dataset, one of the most important data structures in R.
+```{r load}
+df <- read.csv("./data/train.csv", header = TRUE) %>%
+  select(2:15) %>% # removing ID column
+  as_data_frame()
+df
+```
+
+# Data Management
+
+To ensure that our data can be tidied properly and all entities are uniform in the amount of attributes each has, we can perform a quick check to make sure there's no NA values referring to missing entries.
+
+```{r}
+apply(df, 2, FUN=function(x) any(is.na(x)))
+```
+
+
+# Prediction Task
+
+_Can we predict a suburb's median housing value using different regression models?_  
+
+For example, here we have the number of rooms per dwelling plotted against median housing value. In general, it seems that there is a linear relationship between these two variables, with a large cluster in the middle. We can do much better later on.
+
+```{r}
+df %>% 
+  ggplot(aes(x=rm,y=medv)) + geom_point() + geom_smooth(method=lm) 
+```
+
+
+# Exploratory Data Analysis
+
+  To get an understanding of how our outcome variable, `medv`, is distributed, let's make a histogram plot, as well as a boxplot to visualize its distribution and density.
+  First we will show the histogram:
+  
+```{r}
+ggplot(df) +
+  geom_histogram(aes(x=medv))
+```
+
+\pagebreak
+And here we have the boxplot:
+
+```{r}
+ggplot(df, mapping=aes(x='',y=medv)) +
+  geom_boxplot()
+```
+
+  It seems that median values for houses in different suburbs are center around 22000, with some outliers mainly above 40000. Let us plot our `medv` against all other variables, since we might want to eliminate attributes with a weak correlation to `medv` in the future.  
+
+```{r, message=FALSE, fig.width=8, fig.height=5}
+attach(df)
+par(mfrow=c(3,5)) # 4 figures arranged in 3 rows and 5 columns
+plot(medv, crim , main="medv vs. crim")
+plot(medv, zn , main="medv vs. zn")
+plot(medv, indus , main="medv vs. indus")
+plot(medv, chas , main="medv vs. chas")
+plot(medv, nox , main="medv vs. nox")
+plot(medv, rm , main="medv vs. rm")
+plot(medv, age , main="medv vs. age")
+plot(medv, dis , main="medv vs. dis")
+plot(medv, rad , main="medv vs. rad")
+plot(medv, tax , main="medv vs. tax")
+plot(medv, ptratio , main="medv vs. ptratio")
+plot(medv, black , main="medv vs. black")
+plot(medv, lstat , main="medv vs. lstat")
+```
+
+Some variables appear more correlated to `medv` than others, with `lstat` and `rm` looking most correlated, which fits intuition since they refer to status of the population and average number of rooms per dwelling.  
+
+Let's use the `cor()` function to see the correlations.
+
+```{r}
+correlations <- tidy(cor(df)) %>%
+  arrange(desc(abs(medv))) %>%
+  slice(2:n()) %>%
+  mutate(variables=.rownames,correlation_with_medv=medv) %>%
+  select('variables', 'correlation_with_medv')
+
+correlations
+```
+
+Since generally correlations between -0.2 and 0.2 are considered weak, we might want to see in the future if removing the variables `dis` and `chas` improves our predictions.
+
+\pagebreak
+
+# Regression Models
+
+Let's split our data to a training test, and a test set. The test set will be held out while we learn our models.
+
+```{r}
+set.seed(123) # set seed to enable replication of results
+
+## 75% of the training set
+smp_size <- floor(0.75 * nrow(df))
+
+## Now lets populate a testing set, and then update our training set to match
+train_ind <- sample(seq_len(nrow(df)), size = smp_size)
+
+train <- df[train_ind, ]
+train
+test <- df[-train_ind, ]
+test
+```
+
+As a metric to test the accuracy of our models we will use root-mean squared error, which is given by:
+
+\[RMSE = \sqrt{\frac{1}{n}\Sigma_{i=1}^{n}{(y_i-\hat{y}_i)^2}}\]
+
+## Linear Regression
+
+First, let us try generalized linear regression model with MEDV as the dependent variable and all the remaining variables as independent variables.
+
+```{r linReg}
+set.seed(123) # set seed to enable replication of results
+
+#Try linear model using all features
+linRegFit <- lm(medv~., data=train)
+
+# predict on test set
+linRegPred <- predict(linRegFit, newdata=test)
+
+# Root-mean squared error
+linRegRMSE <- sqrt(sum((linRegPred - test$medv)^2)/length(test$medv))
+linRegRMSE
+```
+
+As we can see the RMSE for the linear regression model using all attributes is ~5.25.
+
+## LASSO
+
+Lasso regression (least absolute shrinkage and selection operator) performs variable selection that aims to increase prediction accuracy by identifying a simpler model.
+
+```{r}
+set.seed(123) # set seed to enable replication of results
+
+# Find the best lambda using cross-validation
+cv <- cv.glmnet(x=as.matrix(train[,1:13]), y=as.matrix(train$medv), alpha = 1, nfolds=5)
+
+# Fit the model on the training data
+lassoModel <- glmnet(x=as.matrix(train[,1:13]), y=as.matrix(train$medv), alpha = 1,
+                     lambda = cv$lambda.min)
+
+# Make predictions on the test data
+glmTest <- model.matrix(medv~., test)[,-1]
+lassoPred <- predict(lassoModel, glmTest) %>% as.vector()
+
+# Model performance metrics
+lassoRMSE <- RMSE(lassoPred, test$medv)
+lassoRMSE
+```
+
+As we can see the RMSE for the linear regression model using all attributes is ~5.20, which is slightly better than the linear model. This fits intuition since this model penalizes variables that don't contribute to the prediction.
+
+## Random Forest
+
+The random forest model is a method of classification and regression using many decision trees during training. The output of this model depends on what class was given during input. This is either the mode of the class for classification and the mean prediction for regression. The main benefits for using random forests over standard decision trees is that they prevent overfitting of the dataset. Overfitting is defined as producing analysis which corresponds too closely or exactly to a particular set of data. This could be troublesome in machine learning as overfitting leads to poor performance on the validation dataset. In this project we use this model for regression. Let’s now learn the random forest model using default parameters. 
+
+```{r}
+library(randomForest)
+
+set.seed(123) # set seed to enable replication of results
+
+# Fit the model
+rfFit <- randomForest(formula=medv~., data=train)
+
+# Make predictions on test data
+rfPred <- predict(rfFit, test)
+
+# Model performance metrics
+rfRMSE <- sqrt(sum((test$medv - (rfPred))^2)/length(test$medv))
+rfRMSE
+```
+As we can see the RMSE for the linear regression model using all attributes is ~2.82, a far better result compared to the other models.
+
+Let's see if we can improve this result via a small grid search on the number of trees.
+
+```{r}
+getRMSEforNtrees <- function(ntrees) {
+  set.seed(123)
+  # Fit the model
+  rfFit <- randomForest(formula=medv~., ntree=ntrees, data=train)
+  
+  # Make predictions on test data
+  rfPred <- predict(rfFit, test)
+  
+  # Model performance metrics
+  rfRMSE <- sqrt(sum((test$medv - (rfPred))^2)/length(test$medv))
+  rfRMSE
+}
+
+num_trees <- c(100, 120, 140, 160, 180, 200, 220, 240, 260, 280, 300, 320, 340, 360, 380, 400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600)
+
+plot(num_trees, lapply(num_trees, getRMSEforNtrees), main = 'Grid Search for # of Trees', xlab='# of trees', ylab='RMSE')
+```
+
+This gets us to a RMSE value of ~2.79.
+
+# Conclusion
+
+  In conclusion our tutorial has provided a basic introduction to many aspects of data science. In our tutorial we covered simple tactics in gathering data, tidying data, performing exploratory data analysis and various topics in machine learning. We  presented various methods of verification of correlation against a model, and data visualization. We then compared a few different machine learning model and achieved better results with the slightly tuned random forest model.
+  
+
+
+
+
+
+
+
+
+
+
+
+_E_
+
+
